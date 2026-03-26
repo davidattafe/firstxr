@@ -7,7 +7,7 @@
     <style>
         body {
             margin: 0;
-            background-color: transparent; /* Changed to transparent */
+            background-color: transparent;
             color: #fff;
             font-family: sans-serif;
             overflow: hidden;
@@ -26,6 +26,19 @@
             border-radius: 10px;
             display: inline-block;
         }
+        #exit-button {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background: rgba(255, 0, 0, 0.6);
+            color: white;
+            border: 2px solid white;
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 200;
+            display: none; /* Hidden by default, shown in XR */
+        }
     </style>
 </head>
 <body>
@@ -37,7 +50,8 @@
         </div>
     </div>
 
-    <!-- Use a script type module to ensure modern loading behavior -->
+    <button id="exit-button">Exit VR</button>
+
     <script type="module">
         import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.158.0/three.module.min.js';
 
@@ -49,14 +63,12 @@
         const tempMatrix = new THREE.Matrix4();
         const group = new THREE.Group();
 
-        // Initialize the app
         function init() {
             container = document.createElement('div');
             document.body.appendChild(container);
 
             scene = new THREE.Scene();
-            // Ensure scene background is null for transparency
-            scene.background = null;
+            scene.background = null; 
 
             camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 10);
             camera.position.set(0, 1.6, 3);
@@ -91,16 +103,16 @@
                 group.add(mesh);
             }
 
-            // renderer alpha: true is essential for passthrough
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.xr.enabled = true;
-            renderer.setClearAlpha(0); // Set transparency
+            renderer.setClearAlpha(0);
             
             container.appendChild(renderer.domElement);
 
             setupXRButton();
+            setupExitButton();
 
             controller1 = renderer.xr.getController(0);
             controller1.addEventListener('selectstart', onSelectStart);
@@ -131,10 +143,10 @@
 
         function setupXRButton() {
             if ('xr' in navigator) {
-                // Check for immersive-vr which is used for passthrough on Quest
                 navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
                     if (supported) {
                         const button = document.createElement('button');
+                        button.id = 'enter-vr-btn';
                         button.style.position = 'absolute';
                         button.style.bottom = '20px';
                         button.style.left = 'calc(50% - 75px)';
@@ -150,25 +162,45 @@
                         button.onclick = () => {
                             const sessionInit = {
                                 requiredFeatures: ['local-floor'],
-                                optionalFeatures: ['hand-tracking']
+                                optionalFeatures: ['hand-tracking'],
+                                // This hint is often necessary for Meta Quest to trigger the passthrough layer correctly
+                                domOverlay: { root: document.body }
                             };
                             
-                            // For Meta Quest passthrough, we use immersive-vr but with a transparent background
                             navigator.xr.requestSession('immersive-vr', sessionInit).then(onSessionStarted);
                         };
                         document.body.appendChild(button);
                         document.getElementById('status').textContent = 'Ready for Quest Passthrough';
-                    } else {
-                        document.getElementById('status').textContent = 'WebXR VR not supported';
                     }
                 });
-            } else {
-                document.getElementById('status').textContent = 'WebXR not available';
             }
+        }
+
+        function setupExitButton() {
+            const exitBtn = document.getElementById('exit-button');
+            exitBtn.addEventListener('click', () => {
+                const session = renderer.xr.getSession();
+                if (session) {
+                    session.end();
+                }
+            });
         }
 
         function onSessionStarted(session) {
             renderer.xr.setSession(session);
+            document.getElementById('status').textContent = 'Session Started';
+            document.getElementById('exit-button').style.display = 'block';
+            
+            const enterBtn = document.getElementById('enter-vr-btn');
+            if (enterBtn) enterBtn.style.display = 'none';
+
+            session.addEventListener('end', () => {
+                document.getElementById('exit-button').style.display = 'none';
+                if (document.getElementById('enter-vr-btn')) {
+                    document.getElementById('enter-vr-btn').style.display = 'block';
+                }
+                document.getElementById('status').textContent = 'Ready for Quest Passthrough';
+            });
         }
 
         function onSelectStart(event) {
@@ -245,7 +277,6 @@
             }
         }
 
-        // Run the init once the module is ready
         init();
     </script>
 </body>
