@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Quest 3 MR Experience</title>
+    <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+    <!-- Simple component to handle clicks/pinches -->
+    <script>
+      AFRAME.registerComponent('color-changer', {
+        init: function () {
+          this.el.addEventListener('click', () => {
+            const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16);
+            this.el.setAttribute('material', 'color', randomColor);
+          });
+        }
+      });
+    </script>
+  </head>
+  <body>
+    <!-- 
+      - local-floor: ensures your height is tracked correctly.
+      - managed-slots: helps with Quest 3 performance.
+    -->
+    <a-scene 
+      webxr="optionalFeatures: hit-test, local-floor, layers; referenceSpaceType: local-floor"
+      cursor="rayOrigin: mouse" raycaster="objects: .interactable">
+      
+      <!-- This hides the virtual world when you enter AR/Passthrough mode -->
+      <a-sky id="sky" color="#111" hide-on-enter-ar></a-sky>
+
+      <!-- LIGHTING -->
+      <a-entity light="type: ambient; intensity: 0.5;"></a-entity>
+      <a-entity light="type: directional; intensity: 1; position: 1 1 1"></a-entity>
+
+      <!-- INTERACTABLE OBJECTS (The .interactable class allows clicking) -->
+      <a-box 
+        class="interactable"
+        color-changer
+        position="0 1.2 -1" 
+        scale="0.3 0.3 0.3" 
+        color="#4CC3D9" 
+        animation="property: rotation; to: 0 360 0; loop: true; dur: 10000; easing: linear">
+      </a-box>
+
+      <a-sphere 
+        class="interactable"
+        color-changer
+        position="0.6 1.2 -0.8" 
+        radius="0.15" 
+        color="#EF2D5E">
+      </a-sphere>
+
+      <a-cylinder 
+        class="interactable"
+        color-changer
+        position="-0.6 1.2 -0.8" 
+        radius="0.1" 
+        height="0.3" 
+        color="#FFC65D">
+      </a-cylinder>
+
+      <!-- GROUND (Hidden in AR) -->
+      <a-plane position="0 0 0" rotation="-90 0 0" width="10" height="10" color="#333" hide-on-enter-ar></a-plane>
+
+      <!-- PLAYER / CONTROLS -->
+      <a-entity id="rig">
+        <a-camera position="0 1.6 0"></a-camera>
+        
+        <!-- Hand Tracking with a "laser" for clicking -->
+        <a-entity hand-tracking-controls="hand: left"></a-entity>
+        <a-entity hand-tracking-controls="hand: right" laser-controls="hand: right" raycaster="objects: .interactable; far: 5"></a-entity>
+        
+        <!-- Standard Quest Controllers -->
+        <a-entity oculus-touch-controls="hand: left"></a-entity>
+        <a-entity oculus-touch-controls="hand: right" laser-controls="hand: right" raycaster="objects: .interactable; far: 5"></a-entity>
+      </a-entity>
+
+    </a-scene>
+  </body>
+</html>
