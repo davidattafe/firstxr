@@ -1,79 +1,246 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <title>Quest 3 MR Experience</title>
-    <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-    <!-- Simple component to handle clicks/pinches -->
-    <script>
-      AFRAME.registerComponent('color-changer', {
-        init: function () {
-          this.el.addEventListener('click', () => {
-            const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16);
-            this.el.setAttribute('material', 'color', randomColor);
-          });
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quest 3 WebXR Passthrough Interaction</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #000;
+            color: #fff;
+            font-family: sans-serif;
+            overflow: hidden;
         }
-      });
+        #info {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            z-index: 100;
+            pointer-events: none;
+        }
+        .overlay {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <div class="overlay">
+            <h1>Quest 3 Passthrough</h1>
+            <p>Trigger: Change Color | Grip: Grab & Move</p>
+            <p id="status">Loading Three.js...</p>
+        </div>
+    </div>
+
+    <!-- Use a script type module to ensure modern loading behavior -->
+    <script type="module">
+        import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.158.0/three.module.min.js';
+
+        let container;
+        let camera, scene, renderer;
+        let controller1, controller2;
+        let raycaster;
+        const intersected = [];
+        const tempMatrix = new THREE.Matrix4();
+        const group = new THREE.Group();
+
+        // Initialize the app
+        function init() {
+            container = document.createElement('div');
+            document.body.appendChild(container);
+
+            scene = new THREE.Scene();
+
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 10);
+            camera.position.set(0, 1.6, 3);
+
+            const sceneLight = new THREE.HemisphereLight(0xbcbcbc, 0xa5a5a5, 3);
+            scene.add(sceneLight);
+
+            const directLight = new THREE.DirectionalLight(0xffffff, 3);
+            directLight.position.set(0, 6, 0);
+            scene.add(directLight);
+
+            scene.add(group);
+
+            const geometries = [
+                new THREE.BoxGeometry(0.2, 0.2, 0.2),
+                new THREE.SphereGeometry(0.15, 32, 32),
+                new THREE.CylinderGeometry(0.1, 0.1, 0.3, 32)
+            ];
+
+            const colors = [0xff0000, 0x00ff00, 0x0000ff];
+            const positions = [
+                [-0.5, 1.2, -0.5],
+                [0, 1.2, -0.5],
+                [0.5, 1.2, -0.5]
+            ];
+
+            for (let i = 0; i < 3; i++) {
+                const material = new THREE.MeshStandardMaterial({ color: colors[i] });
+                const mesh = new THREE.Mesh(geometries[i], material);
+                mesh.position.set(...positions[i]);
+                mesh.userData.originalColor = colors[i];
+                group.add(mesh);
+            }
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true;
+            renderer.setClearAlpha(0);
+            
+            container.appendChild(renderer.domElement);
+
+            setupXRButton();
+
+            controller1 = renderer.xr.getController(0);
+            controller1.addEventListener('selectstart', onSelectStart);
+            controller1.addEventListener('squeezestart', onSqueezeStart);
+            controller1.addEventListener('squeezeend', onSqueezeEnd);
+            scene.add(controller1);
+
+            controller2 = renderer.xr.getController(1);
+            controller2.addEventListener('selectstart', onSelectStart);
+            controller2.addEventListener('squeezestart', onSqueezeStart);
+            controller2.addEventListener('squeezeend', onSqueezeEnd);
+            scene.add(controller2);
+
+            const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
+            const line = new THREE.Line(geometry);
+            line.name = 'line';
+            line.scale.z = 5;
+
+            controller1.add(line.clone());
+            controller2.add(line.clone());
+
+            raycaster = new THREE.Raycaster();
+
+            window.addEventListener('resize', onWindowResize);
+            
+            animate();
+        }
+
+        function setupXRButton() {
+            if ('xr' in navigator) {
+                navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+                    if (supported) {
+                        const button = document.createElement('button');
+                        button.style.position = 'absolute';
+                        button.style.bottom = '20px';
+                        button.style.left = 'calc(50% - 75px)';
+                        button.style.width = '150px';
+                        button.style.padding = '12px 6px';
+                        button.style.border = '1px solid #fff';
+                        button.style.borderRadius = '4px';
+                        button.style.background = 'rgba(0,0,0,0.5)';
+                        button.style.color = '#fff';
+                        button.style.cursor = 'pointer';
+                        button.textContent = 'ENTER VR / AR';
+                        
+                        button.onclick = () => {
+                            const sessionInit = {
+                                requiredFeatures: ['local-floor'],
+                                optionalFeatures: ['hand-tracking']
+                            };
+                            navigator.xr.requestSession('immersive-vr', sessionInit).then(onSessionStarted);
+                        };
+                        document.body.appendChild(button);
+                        document.getElementById('status').textContent = 'Ready for Quest WebXR';
+                    } else {
+                        document.getElementById('status').textContent = 'WebXR VR not supported';
+                    }
+                });
+            } else {
+                document.getElementById('status').textContent = 'WebXR not available';
+            }
+        }
+
+        function onSessionStarted(session) {
+            renderer.xr.setSession(session);
+        }
+
+        function onSelectStart(event) {
+            const controller = event.target;
+            const intersections = getIntersections(controller);
+            if (intersections.length > 0) {
+                const object = intersections[0].object;
+                object.material.color.setHex(Math.random() * 0xffffff);
+            }
+        }
+
+        function onSqueezeStart(event) {
+            const controller = event.target;
+            const intersections = getIntersections(controller);
+            if (intersections.length > 0) {
+                const object = intersections[0].object;
+                controller.attach(object);
+                controller.userData.selected = object;
+            }
+        }
+
+        function onSqueezeEnd(event) {
+            const controller = event.target;
+            if (controller.userData.selected !== undefined) {
+                const object = controller.userData.selected;
+                group.attach(object);
+                controller.userData.selected = undefined;
+            }
+        }
+
+        function getIntersections(controller) {
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            return raycaster.intersectObjects(group.children, false);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            renderer.setAnimationLoop(render);
+        }
+
+        function render() {
+            cleanIntersected();
+            intersectObjects(controller1);
+            intersectObjects(controller2);
+            renderer.render(scene, camera);
+        }
+
+        function intersectObjects(controller) {
+            if (controller.userData.selected !== undefined) return;
+            const line = controller.getObjectByName('line');
+            const intersections = getIntersections(controller);
+            if (intersections.length > 0) {
+                const intersection = intersections[0];
+                const object = intersection.object;
+                object.material.emissive.b = 0.5;
+                intersected.push(object);
+                line.scale.z = intersection.distance;
+            } else {
+                line.scale.z = 5;
+            }
+        }
+
+        function cleanIntersected() {
+            while (intersected.length) {
+                const object = intersected.pop();
+                object.material.emissive.b = 0;
+            }
+        }
+
+        // Run the init once the module is ready
+        init();
     </script>
-  </head>
-  <body>
-    <!-- 
-      - local-floor: ensures your height is tracked correctly.
-      - managed-slots: helps with Quest 3 performance.
-    -->
-    <a-scene 
-      webxr="optionalFeatures: hit-test, local-floor, layers; referenceSpaceType: local-floor"
-      cursor="rayOrigin: mouse" raycaster="objects: .interactable">
-      
-      <!-- This hides the virtual world when you enter AR/Passthrough mode -->
-      <a-sky id="sky" color="#111" hide-on-enter-ar></a-sky>
-
-      <!-- LIGHTING -->
-      <a-entity light="type: ambient; intensity: 0.5;"></a-entity>
-      <a-entity light="type: directional; intensity: 1; position: 1 1 1"></a-entity>
-
-      <!-- INTERACTABLE OBJECTS (The .interactable class allows clicking) -->
-      <a-box 
-        class="interactable"
-        color-changer
-        position="0 1.2 -1" 
-        scale="0.3 0.3 0.3" 
-        color="#4CC3D9" 
-        animation="property: rotation; to: 0 360 0; loop: true; dur: 10000; easing: linear">
-      </a-box>
-
-      <a-sphere 
-        class="interactable"
-        color-changer
-        position="0.6 1.2 -0.8" 
-        radius="0.15" 
-        color="#EF2D5E">
-      </a-sphere>
-
-      <a-cylinder 
-        class="interactable"
-        color-changer
-        position="-0.6 1.2 -0.8" 
-        radius="0.1" 
-        height="0.3" 
-        color="#FFC65D">
-      </a-cylinder>
-
-      <!-- GROUND (Hidden in AR) -->
-      <a-plane position="0 0 0" rotation="-90 0 0" width="10" height="10" color="#333" hide-on-enter-ar></a-plane>
-
-      <!-- PLAYER / CONTROLS -->
-      <a-entity id="rig">
-        <a-camera position="0 1.6 0"></a-camera>
-        
-        <!-- Hand Tracking with a "laser" for clicking -->
-        <a-entity hand-tracking-controls="hand: left"></a-entity>
-        <a-entity hand-tracking-controls="hand: right" laser-controls="hand: right" raycaster="objects: .interactable; far: 5"></a-entity>
-        
-        <!-- Standard Quest Controllers -->
-        <a-entity oculus-touch-controls="hand: left"></a-entity>
-        <a-entity oculus-touch-controls="hand: right" laser-controls="hand: right" raycaster="objects: .interactable; far: 5"></a-entity>
-      </a-entity>
-
-    </a-scene>
-  </body>
+</body>
 </html>
