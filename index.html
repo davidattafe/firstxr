@@ -30,14 +30,17 @@
             position: absolute;
             top: 20px;
             right: 20px;
-            padding: 10px 20px;
-            background: rgba(255, 0, 0, 0.6);
+            padding: 15px 25px;
+            background: rgba(220, 20, 60, 0.8);
             color: white;
             border: 2px solid white;
-            border-radius: 5px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 16px;
             cursor: pointer;
-            z-index: 200;
+            z-index: 2000;
             display: none;
+            pointer-events: auto;
         }
     </style>
 </head>
@@ -50,7 +53,7 @@
         </div>
     </div>
 
-    <button id="exit-button">Exit VR</button>
+    <button id="exit-button">EXIT VR</button>
 
     <script type="module">
         import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.158.0/three.module.min.js';
@@ -100,28 +103,59 @@
             scene.add( new THREE.Mesh( skyGeo, skyMat ) );
 
             // --- GROUND PLANE ---
-            const groundGeo = new THREE.PlaneGeometry(100, 100);
-            const groundMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+            const groundGeo = new THREE.PlaneGeometry(200, 200);
+            const groundMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
             const ground = new THREE.Mesh(groundGeo, groundMat);
             ground.rotation.x = -Math.PI / 2;
             ground.receiveShadow = true;
             scene.add(ground);
 
-            // --- MOUNTAINS (Distance in front) ---
-            for (let i = 0; i < 5; i++) {
-                const mountainGeo = new THREE.ConeGeometry(5 + Math.random() * 5, 10 + Math.random() * 10, 4);
-                const mountainMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
+            // --- MOUNTAINS (Enhanced Coloring) ---
+            for (let i = 0; i < 8; i++) {
+                const height = 15 + Math.random() * 15;
+                const radius = 8 + Math.random() * 8;
+                const mountainGeo = new THREE.ConeGeometry(radius, height, 4);
+                const mountainMat = new THREE.MeshStandardMaterial({ color: 0x4d3319 }); // Brown base
                 const mountain = new THREE.Mesh(mountainGeo, mountainMat);
-                mountain.position.set(-20 + i * 10, 5, -40);
+                mountain.position.set(-40 + i * 12, height / 2, -60);
                 scene.add(mountain);
+
+                // Add Snow Cap
+                const capHeight = height * 0.3;
+                const capGeo = new THREE.ConeGeometry(radius * 0.3, capHeight, 4);
+                const capMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+                const cap = new THREE.Mesh(capGeo, capMat);
+                cap.position.set(mountain.position.x, height - (capHeight / 2), mountain.position.z);
+                scene.add(cap);
             }
 
+            // --- DISTANT CITY (Left and Right) ---
+            function createCity(xPos) {
+                const cityGroup = new THREE.Group();
+                for (let i = 0; i < 20; i++) {
+                    const h = 2 + Math.random() * 10;
+                    const w = 1 + Math.random() * 2;
+                    const bGeo = new THREE.BoxGeometry(w, h, w);
+                    const bMat = new THREE.MeshStandardMaterial({ color: 0x222222 + (Math.random() * 0x333333) });
+                    const building = new THREE.Mesh(bGeo, bMat);
+                    building.position.set(
+                        xPos + (Math.random() - 0.5) * 20,
+                        h / 2,
+                        (Math.random() - 0.5) * 40
+                    );
+                    cityGroup.add(building);
+                }
+                scene.add(cityGroup);
+            }
+            createCity(-50); // Left city
+            createCity(50);  // Right city
+
             // --- LAKE (Distance behind) ---
-            const lakeGeo = new THREE.CircleGeometry(15, 32);
-            const lakeMat = new THREE.MeshStandardMaterial({ color: 0x004488, roughness: 0, metalness: 0.5 });
+            const lakeGeo = new THREE.CircleGeometry(25, 64);
+            const lakeMat = new THREE.MeshStandardMaterial({ color: 0x004488, roughness: 0.1, metalness: 0.8 });
             const lake = new THREE.Mesh(lakeGeo, lakeMat);
             lake.rotation.x = -Math.PI / 2;
-            lake.position.set(0, 0.01, 30); // Slightly above ground to prevent z-fighting
+            lake.position.set(0, 0.02, 50);
             scene.add(lake);
 
             camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 5000);
@@ -216,7 +250,8 @@
                         button.onclick = () => {
                             const sessionInit = {
                                 requiredFeatures: ['local-floor'],
-                                optionalFeatures: ['hand-tracking']
+                                optionalFeatures: ['hand-tracking', 'dom-overlay'],
+                                domOverlay: { root: document.body } // CRITICAL for Exit button visibility in VR
                             };
                             navigator.xr.requestSession('immersive-vr', sessionInit).then(onSessionStarted);
                         };
@@ -229,7 +264,8 @@
 
         function setupExitButton() {
             const exitBtn = document.getElementById('exit-button');
-            exitBtn.addEventListener('click', () => {
+            exitBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
                 const session = renderer.xr.getSession();
                 if (session) {
                     session.end();
