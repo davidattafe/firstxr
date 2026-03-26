@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quest 3 WebXR Passthrough Interaction</title>
+    <title>Quest 3 WebXR Environment</title>
     <style>
         body {
             margin: 0;
-            background-color: transparent;
+            background-color: #000;
             color: #fff;
             font-family: sans-serif;
             overflow: hidden;
@@ -37,14 +37,14 @@
             border-radius: 5px;
             cursor: pointer;
             z-index: 200;
-            display: none; /* Hidden by default, shown in XR */
+            display: none;
         }
     </style>
 </head>
 <body>
     <div id="info">
         <div class="overlay">
-            <h1>Quest 3 Passthrough</h1>
+            <h1>Quest 3 VR Environment</h1>
             <p>Trigger: Change Color | Grip: Grab & Move</p>
             <p id="status">Loading Three.js...</p>
         </div>
@@ -68,20 +68,75 @@
             document.body.appendChild(container);
 
             scene = new THREE.Scene();
-            scene.background = null; 
 
-            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 10);
+            // --- SKYBOX (Blue Gradient) ---
+            const vertexShader = `
+                varying vec3 vWorldPosition;
+                void main() {
+                    vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
+                    vWorldPosition = worldPosition.xyz;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+                }
+            `;
+            const fragmentShader = `
+                uniform vec3 topColor;
+                uniform vec3 bottomColor;
+                uniform float offset;
+                uniform float exponent;
+                varying vec3 vWorldPosition;
+                void main() {
+                    float h = normalize( vWorldPosition + offset ).y;
+                    gl_FragColor = vec4( mix( bottomColor, topColor, max( pow( max( h , 0.0), exponent ), 0.0 ) ), 1.0 );
+                }
+            `;
+            const uniforms = {
+                topColor: { value: new THREE.Color( 0x0077ff ) },
+                bottomColor: { value: new THREE.Color( 0xffffff ) },
+                offset: { value: 33 },
+                exponent: { value: 0.6 }
+            };
+            const skyGeo = new THREE.SphereGeometry( 4000, 32, 15 );
+            const skyMat = new THREE.ShaderMaterial( { vertexShader, fragmentShader, uniforms, side: THREE.BackSide } );
+            scene.add( new THREE.Mesh( skyGeo, skyMat ) );
+
+            // --- GROUND PLANE ---
+            const groundGeo = new THREE.PlaneGeometry(100, 100);
+            const groundMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // --- MOUNTAINS (Distance in front) ---
+            for (let i = 0; i < 5; i++) {
+                const mountainGeo = new THREE.ConeGeometry(5 + Math.random() * 5, 10 + Math.random() * 10, 4);
+                const mountainMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
+                const mountain = new THREE.Mesh(mountainGeo, mountainMat);
+                mountain.position.set(-20 + i * 10, 5, -40);
+                scene.add(mountain);
+            }
+
+            // --- LAKE (Distance behind) ---
+            const lakeGeo = new THREE.CircleGeometry(15, 32);
+            const lakeMat = new THREE.MeshStandardMaterial({ color: 0x004488, roughness: 0, metalness: 0.5 });
+            const lake = new THREE.Mesh(lakeGeo, lakeMat);
+            lake.rotation.x = -Math.PI / 2;
+            lake.position.set(0, 0.01, 30); // Slightly above ground to prevent z-fighting
+            scene.add(lake);
+
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 5000);
             camera.position.set(0, 1.6, 3);
 
-            const sceneLight = new THREE.HemisphereLight(0xbcbcbc, 0xa5a5a5, 3);
+            const sceneLight = new THREE.HemisphereLight(0xbcbcbc, 0xa5a5a5, 2);
             scene.add(sceneLight);
 
-            const directLight = new THREE.DirectionalLight(0xffffff, 3);
-            directLight.position.set(0, 6, 0);
+            const directLight = new THREE.DirectionalLight(0xffffff, 2);
+            directLight.position.set(10, 20, 10);
             scene.add(directLight);
 
             scene.add(group);
 
+            // --- INTERACTABLE OBJECTS ---
             const geometries = [
                 new THREE.BoxGeometry(0.2, 0.2, 0.2),
                 new THREE.SphereGeometry(0.15, 32, 32),
@@ -90,9 +145,9 @@
 
             const colors = [0xff0000, 0x00ff00, 0x0000ff];
             const positions = [
-                [-0.5, 1.2, -0.5],
-                [0, 1.2, -0.5],
-                [0.5, 1.2, -0.5]
+                [-0.5, 1.2, -1],
+                [0, 1.2, -1],
+                [0.5, 1.2, -1]
             ];
 
             for (let i = 0; i < 3; i++) {
@@ -103,11 +158,10 @@
                 group.add(mesh);
             }
 
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.xr.enabled = true;
-            renderer.setClearAlpha(0);
             
             container.appendChild(renderer.domElement);
 
@@ -157,20 +211,17 @@
                         button.style.background = 'rgba(0,0,0,0.5)';
                         button.style.color = '#fff';
                         button.style.cursor = 'pointer';
-                        button.textContent = 'ENTER AR';
+                        button.textContent = 'ENTER VR';
                         
                         button.onclick = () => {
                             const sessionInit = {
                                 requiredFeatures: ['local-floor'],
-                                optionalFeatures: ['hand-tracking'],
-                                // This hint is often necessary for Meta Quest to trigger the passthrough layer correctly
-                                domOverlay: { root: document.body }
+                                optionalFeatures: ['hand-tracking']
                             };
-                            
                             navigator.xr.requestSession('immersive-vr', sessionInit).then(onSessionStarted);
                         };
                         document.body.appendChild(button);
-                        document.getElementById('status').textContent = 'Ready for Quest Passthrough';
+                        document.getElementById('status').textContent = 'Ready for VR';
                     }
                 });
             }
@@ -188,7 +239,7 @@
 
         function onSessionStarted(session) {
             renderer.xr.setSession(session);
-            document.getElementById('status').textContent = 'Session Started';
+            document.getElementById('status').textContent = 'VR Session Started';
             document.getElementById('exit-button').style.display = 'block';
             
             const enterBtn = document.getElementById('enter-vr-btn');
@@ -199,7 +250,7 @@
                 if (document.getElementById('enter-vr-btn')) {
                     document.getElementById('enter-vr-btn').style.display = 'block';
                 }
-                document.getElementById('status').textContent = 'Ready for Quest Passthrough';
+                document.getElementById('status').textContent = 'Ready for VR';
             });
         }
 
